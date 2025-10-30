@@ -6,13 +6,16 @@ from docx.shared import RGBColor, Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+import pypandoc
+import tempfile
+import os
 
 # -------------------------------
 # Streamlit Page Setup
 # -------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
-st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically.")
+st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically (PDF ready).")
 
 # -------------------------------
 # Dropdowns
@@ -225,20 +228,38 @@ if submitted:
                 break
 
         # -------------------------------
-        # Save and Download
+        # Save to DOCX, then convert to PDF
         # -------------------------------
-        out_buf = io.BytesIO()
-        doc.save(out_buf)
-        out_buf.seek(0)
-
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
-        out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
+        out_name_docx = f"Warranty_{fname_customer}_{fname_gem}.docx"
+        out_name_pdf = f"Warranty_{fname_customer}_{fname_gem}.pdf"
 
-        st.success("✅ Certificate generated successfully with Narrow layout and correct alignment.")
-        st.download_button(
-            "⬇️ Download Certificate (DOCX)",
-            data=out_buf,
-            file_name=out_name,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docx_path = os.path.join(tmpdir, out_name_docx)
+            pdf_path = os.path.join(tmpdir, out_name_pdf)
+
+            doc.save(docx_path)
+
+            try:
+                pypandoc.convert_file(docx_path, "pdf", outputfile=pdf_path, extra_args=["--standalone"])
+                with open(pdf_path, "rb") as f:
+                    pdf_data = f.read()
+                st.download_button(
+                    "⬇️ Download Certificate (PDF)",
+                    data=pdf_data,
+                    file_name=out_name_pdf,
+                    mime="application/pdf"
+                )
+            except Exception as e:
+                st.error(f"PDF conversion failed: {e}")
+                # Fallback DOCX
+                with open(docx_path, "rb") as f:
+                    st.download_button(
+                        "⬇️ Download Certificate (DOCX)",
+                        data=f.read(),
+                        file_name=out_name_docx,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+
+        st.success("✅ Certificate generated successfully (with Narrow layout and PDF export).")
