@@ -1,4 +1,6 @@
 import io
+import tempfile
+import os
 from datetime import datetime
 import streamlit as st
 from docx import Document
@@ -7,18 +9,16 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 import pypandoc
-import tempfile
-import os
 
 # -------------------------------
-# Streamlit Page Setup
+# Streamlit Setup
 # -------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
-st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically (PDF ready).")
+st.caption("Upload a DOCX template, fill details, and generate a formatted warranty certificate (direct PDF output).")
 
 # -------------------------------
-# Dropdowns
+# Options
 # -------------------------------
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
 categories = ["AC", "Refrigerator", "Appliances", "Display Panel", "Other"]
@@ -62,14 +62,15 @@ with st.form("wc_form"):
 BLUE = RGBColor(0, 112, 192)
 
 def add_horizontal_line(paragraph):
-    """Draws a blue line under a paragraph"""
     p = paragraph._p
     pPr = p.get_or_add_pPr()
-    pBdr = parse_xml(r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls("w"))
+    pBdr = parse_xml(
+        r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>'
+        % nsdecls("w")
+    )
     pPr.append(pBdr)
 
 def render_labeled_paragraph(p, text):
-    """Styles label:value lines (bold label, normal value)"""
     for i in range(len(p.runs) - 1, -1, -1):
         p._element.remove(p.runs[i]._element)
 
@@ -95,7 +96,6 @@ def render_labeled_paragraph(p, text):
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 def merge_and_replace(doc, mapping):
-    """Replaces placeholders in document and keeps formatting consistent"""
     def _process(container):
         for p in container.paragraphs:
             original = "".join(r.text for r in p.runs)
@@ -120,7 +120,6 @@ if submitted:
         clean_address = address.replace("\n", ", ").replace(",,", ",").strip().strip(",")
         final_brand = brand_custom.strip() if (brand == "Other" and brand_custom.strip()) else brand
 
-        # Placeholder mapping
         mapping = {
             "{Company}": company,
             "{Category}": category,
@@ -141,23 +140,20 @@ if submitted:
             "{warranty on compressor}": warranty_compressor,
         }
 
-        # Load document
         doc = Document(template_file)
 
-        # --- Set page layout to Narrow ---
+        # --- Narrow Layout ---
         for section in doc.sections:
             section.top_margin = Inches(0.5)
             section.bottom_margin = Inches(0.5)
             section.left_margin = Inches(0.5)
             section.right_margin = Inches(0.5)
 
-        # Replace placeholders
         merge_and_replace(doc, mapping)
 
         # -------------------------------
-        # Styling & Layout
+        # Styling
         # -------------------------------
-        # Company Heading
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
@@ -167,7 +163,6 @@ if submitted:
                 run.font.color.rgb = BLUE
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Center letterhead lines
         for i in range(1, 7):
             if i < len(doc.paragraphs):
                 p = doc.paragraphs[i]
@@ -180,11 +175,10 @@ if submitted:
         # Line below letterhead
         for i, p in enumerate(doc.paragraphs):
             if "Email" in p.text or "@" in p.text:
-                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
+                new_p = doc.paragraphs[i + 1].insert_paragraph_before("")
                 add_horizontal_line(new_p)
                 break
 
-        # Warranty Certificate title
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
@@ -194,10 +188,7 @@ if submitted:
                     run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Customer, Address, Date alignment fix
-        cust_idx = None
-        date_idx = None
-        gem_idx = None
+        cust_idx, date_idx, gem_idx = None, None, None
         for i, p in enumerate(doc.paragraphs):
             if cust_idx is None and p.text.strip().startswith("Customer:"):
                 cust_idx = i
@@ -215,12 +206,10 @@ if submitted:
                 if k != date_idx:
                     doc.paragraphs[k].alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-        # Line below GEM block
         if gem_idx is not None:
-            new_p = doc.paragraphs[gem_idx+1].insert_paragraph_before("")
+            new_p = doc.paragraphs[gem_idx + 1].insert_paragraph_before("")
             add_horizontal_line(new_p)
 
-        # Line above Supplied Product Details
         for i, p in enumerate(doc.paragraphs):
             if "Supplied Product Details" in p.text:
                 new_p = doc.paragraphs[i].insert_paragraph_before("")
@@ -228,7 +217,7 @@ if submitted:
                 break
 
         # -------------------------------
-        # Save to DOCX, then convert to PDF
+        # Save as DOCX and Convert to PDF
         # -------------------------------
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
@@ -253,7 +242,6 @@ if submitted:
                 )
             except Exception as e:
                 st.error(f"PDF conversion failed: {e}")
-                # Fallback DOCX
                 with open(docx_path, "rb") as f:
                     st.download_button(
                         "⬇️ Download Certificate (DOCX)",
@@ -262,4 +250,4 @@ if submitted:
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
 
-        st.success("✅ Certificate generated successfully (with Narrow layout and PDF export).")
+        st.success("✅ Certificate generated successfully (Narrow layout, PDF ready).")
