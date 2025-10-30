@@ -62,7 +62,7 @@ def merge_and_replace(doc, mapping):
         for i in range(len(p.runs) - 1, -1, -1):
             p._element.remove(p.runs[i]._element)
 
-        # Styled replacements
+        # Style logic
         if ":" in full_text:
             parts = full_text.split(":")
             run_label = p.add_run(parts[0] + ":")
@@ -90,7 +90,7 @@ def merge_and_replace(doc, mapping):
             for cell in row.cells:
                 merge_and_replace(cell, mapping)
 
-# Add line function
+# Add horizontal line
 def add_horizontal_line(paragraph):
     """Adds a thin blue line below the given paragraph."""
     p = paragraph._p
@@ -126,18 +126,6 @@ if submitted:
         doc = Document(template_file)
         merge_and_replace(doc, mapping)
 
-        # Insert "On Compressor" line below warranty
-        inserted = False
-        for i, p in enumerate(doc.paragraphs):
-            if "Warranty" in p.text and not inserted:
-                new_p = doc.paragraphs[i+1].insert_paragraph_before(f"• On Compressor : {warranty_compressor}")
-                new_p.runs[0].font.name = "Calibri"
-                new_p.runs[0].font.size = Pt(12)
-                new_p.runs[0].font.color.rgb = RGBColor(0, 112, 192)
-                new_p.runs[0].bold = True
-                inserted = True
-                break
-
         # Company heading formatting
         if doc.paragraphs:
             header = doc.paragraphs[0]
@@ -148,7 +136,7 @@ if submitted:
                 run.font.color.rgb = RGBColor(0, 112, 192)
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Center letterhead (1–6)
+        # Center letterhead
         for i in range(1, 7):
             if i < len(doc.paragraphs):
                 p = doc.paragraphs[i]
@@ -158,20 +146,20 @@ if submitted:
                     run.font.size = Pt(12)
                     run.font.color.rgb = RGBColor(0, 112, 192)
 
-        # Add horizontal lines
-        if len(doc.paragraphs) > 6:
+        # Controlled horizontal lines
+        if len(doc.paragraphs) >= 7:
             add_horizontal_line(doc.paragraphs[6])
 
         for p in doc.paragraphs:
             if "GEM Contract No" in p.text:
                 add_horizontal_line(p)
+                break
+
+        for i, p in enumerate(doc.paragraphs):
             if "Supplied Product Details" in p.text:
-                try:
-                    idx = doc.paragraphs.index(p)
-                    if idx > 0:
-                        add_horizontal_line(doc.paragraphs[idx - 1])
-                except ValueError:
-                    continue
+                if i > 0:
+                    add_horizontal_line(doc.paragraphs[i - 1])
+                break
 
         # Warranty heading
         for p in doc.paragraphs:
@@ -183,7 +171,7 @@ if submitted:
                     run.font.color.rgb = RGBColor(0, 112, 192)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Save and download
+        # Save & Download
         out_buf = io.BytesIO()
         doc.save(out_buf)
         out_buf.seek(0)
