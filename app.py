@@ -8,14 +8,14 @@ from docx.shared import RGBColor, Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
-import pypandoc
+from docx2pdf import convert  # ✅ NEW: replaces pypandoc
 
 # -------------------------------
 # Streamlit Setup
 # -------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
-st.caption("Upload a DOCX template, fill details, and generate a formatted warranty certificate (direct PDF output).")
+st.caption("Upload DOCX template → Fill details → Get formatted Warranty Certificate as PDF")
 
 # -------------------------------
 # Options
@@ -152,7 +152,7 @@ if submitted:
         merge_and_replace(doc, mapping)
 
         # -------------------------------
-        # Styling
+        # Formatting & alignment
         # -------------------------------
         if doc.paragraphs:
             header = doc.paragraphs[0]
@@ -163,16 +163,6 @@ if submitted:
                 run.font.color.rgb = BLUE
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        for i in range(1, 7):
-            if i < len(doc.paragraphs):
-                p = doc.paragraphs[i]
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for run in p.runs:
-                    run.font.name = "Calibri"
-                    run.font.size = Pt(12)
-                    run.font.color.rgb = BLUE
-
-        # Line below letterhead
         for i, p in enumerate(doc.paragraphs):
             if "Email" in p.text or "@" in p.text:
                 new_p = doc.paragraphs[i + 1].insert_paragraph_before("")
@@ -217,7 +207,7 @@ if submitted:
                 break
 
         # -------------------------------
-        # Save as DOCX and Convert to PDF
+        # Save DOCX & Convert to PDF
         # -------------------------------
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
@@ -231,7 +221,7 @@ if submitted:
             doc.save(docx_path)
 
             try:
-                pypandoc.convert_file(docx_path, "pdf", outputfile=pdf_path, extra_args=["--standalone"])
+                convert(docx_path, pdf_path)
                 with open(pdf_path, "rb") as f:
                     pdf_data = f.read()
                 st.download_button(
@@ -250,4 +240,4 @@ if submitted:
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
 
-        st.success("✅ Certificate generated successfully (Narrow layout, PDF ready).")
+        st.success("✅ Certificate generated successfully (PDF ready).")
