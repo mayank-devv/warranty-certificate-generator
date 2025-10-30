@@ -10,7 +10,7 @@ st.title("🧾 Warranty Certificate Generator")
 
 st.caption("Upload your DOCX template, fill details, and generate a perfectly formatted certificate.")
 
-# Dropdown options
+# Dropdowns
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
 categories = ["AC", "Refrigerator", "Appliances", "Display Panel", "Other"]
 brands = [
@@ -45,32 +45,29 @@ with st.form("wc_form"):
     template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
     submitted = st.form_submit_button("Generate Certificate")
 
-# Helper functions
-def style_run(run, size=12, bold=False):
-    run.font.name = "Calibri"
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    # Dark blue from your sample LG 214 file
-    run.font.color.rgb = RGBColor(31, 73, 125)
-
-def replace_in_paragraph(paragraph, mapping):
-    for run in paragraph.runs:
-        for key, val in mapping.items():
-            if key in run.text:
-                run.text = run.text.replace(key, val)
-        style_run(run)
-
-def replace_in_table(table, mapping):
-    for row in table.rows:
-        for cell in row.cells:
-            for p in cell.paragraphs:
-                replace_in_paragraph(p, mapping)
-
-def apply_mapping(doc, mapping):
+# --- Bulletproof replacement ---
+def merge_and_replace(doc, mapping):
+    # paragraphs
     for p in doc.paragraphs:
-        replace_in_paragraph(p, mapping)
-    for tbl in doc.tables:
-        replace_in_table(tbl, mapping)
+        full_text = "".join(run.text for run in p.runs)
+        for key, val in mapping.items():
+            if key in full_text:
+                full_text = full_text.replace(key, val)
+        # remove old runs
+        for i in range(len(p.runs)-1, -1, -1):
+            p._element.remove(p.runs[i]._element)
+        # rebuild one run with consistent styling
+        new_run = p.add_run(full_text)
+        new_run.font.name = "Calibri"
+        new_run.font.size = Pt(12)
+        new_run.font.color.rgb = RGBColor(31, 73, 125)
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    # tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                merge_and_replace(cell, mapping)
 
 if submitted:
     if not template_file:
@@ -98,31 +95,26 @@ if submitted:
 
         doc = Document(template_file)
 
-        # If top doesn't already have company name, insert it
-        if not doc.paragraphs or "{Company}" not in doc.paragraphs[0].text:
-            doc.paragraphs.insert(0, doc.add_paragraph("{Company}"))
+        # Perform replacements
+        merge_and_replace(doc, mapping)
 
-        # Replace placeholders
-        apply_mapping(doc, mapping)
-
-        # Apply formatting globally
-        for i, p in enumerate(doc.paragraphs):
-            for run in p.runs:
-                style_run(run, size=12)
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
-        # Style top header (first paragraph)
+        # Style company heading (first para)
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
-                style_run(run, size=22, bold=True)
+                run.font.name = "Calibri"
+                run.font.size = Pt(22)
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(31, 73, 125)
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Style "WARRANTY CERTIFICATE"
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
-                    style_run(run, size=16, bold=True)
+                    run.font.size = Pt(16)
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(31, 73, 125)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Save and download
@@ -134,7 +126,7 @@ if submitted:
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
         out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        st.success("Warranty Certificate generated with correct Calibri dark blue style ✅")
+        st.success("Warranty Certificate generated with full replacements and Calibri Dark Blue formatting ✅")
         st.download_button("⬇️ Download DOCX",
                            data=out_buf,
                            file_name=out_name,
