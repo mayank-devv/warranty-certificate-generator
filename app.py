@@ -3,11 +3,12 @@ from datetime import datetime
 import streamlit as st
 from docx import Document
 from docx.shared import RGBColor, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
 
-st.caption("Upload your DOCX template with placeholders, fill the form, and generate your styled certificate.")
+st.caption("Upload your DOCX template, fill details, and generate a perfectly formatted certificate.")
 
 # Dropdown options
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
@@ -39,24 +40,25 @@ with st.form("wc_form"):
     ministry = st.text_input("Ministry")
 
     today_str = datetime.now().strftime("%d-%m-%Y")
-    st.info(f"Certificate Date will be set to: **{today_str}**")
+    st.info(f"Certificate Date will be automatically set to: **{today_str}**")
 
     template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
     submitted = st.form_submit_button("Generate Certificate")
 
-# --- Formatting helper functions ---
+# Helper functions
 def style_run(run, size=12, bold=False):
     run.font.name = "Calibri"
     run.font.size = Pt(size)
     run.font.bold = bold
-    run.font.color.rgb = RGBColor(79, 129, 189)
+    # Dark blue from your sample LG 214 file
+    run.font.color.rgb = RGBColor(31, 73, 125)
 
 def replace_in_paragraph(paragraph, mapping):
     for run in paragraph.runs:
         for key, val in mapping.items():
             if key in run.text:
                 run.text = run.text.replace(key, val)
-                style_run(run)
+        style_run(run)
 
 def replace_in_table(table, mapping):
     for row in table.rows:
@@ -96,27 +98,34 @@ if submitted:
 
         doc = Document(template_file)
 
-        # Apply mapping and styling
+        # If top doesn't already have company name, insert it
+        if not doc.paragraphs or "{Company}" not in doc.paragraphs[0].text:
+            doc.paragraphs.insert(0, doc.add_paragraph("{Company}"))
+
+        # Replace placeholders
         apply_mapping(doc, mapping)
 
-        # Style the top company header (first paragraph)
+        # Apply formatting globally
+        for i, p in enumerate(doc.paragraphs):
+            for run in p.runs:
+                style_run(run, size=12)
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+        # Style top header (first paragraph)
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
                 style_run(run, size=22, bold=True)
+            header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Style "WARRANTY CERTIFICATE" heading if exists
+        # Style "WARRANTY CERTIFICATE"
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
                     style_run(run, size=16, bold=True)
-                p.alignment = 1  # center
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Justify body text
-        for p in doc.paragraphs[1:]:
-            p.alignment = 3
-
-        # Save to memory
+        # Save and download
         out_buf = io.BytesIO()
         doc.save(out_buf)
         out_buf.seek(0)
@@ -125,7 +134,7 @@ if submitted:
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
         out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        st.success("Warranty Certificate generated with Calibri Blue formatting!")
+        st.success("Warranty Certificate generated with correct Calibri dark blue style ✅")
         st.download_button("⬇️ Download DOCX",
                            data=out_buf,
                            file_name=out_name,
