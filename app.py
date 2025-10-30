@@ -36,7 +36,7 @@ with st.form("wc_form"):
     warranty = st.text_input("Warranty (e.g., 5 Years)")
     customer_name = st.text_input("Customer Name / Dept")
     organisation = st.text_input("Organisation")
-    address = st.text_area("Address")
+    address = st.text_area("Address (use commas or new lines)")
     ministry = st.text_input("Ministry")
 
     today_str = datetime.now().strftime("%d-%m-%Y")
@@ -60,7 +60,7 @@ def merge_and_replace(doc, mapping):
         new_run = p.add_run(full_text)
         new_run.font.name = "Calibri"
         new_run.font.size = Pt(12)
-        new_run.font.color.rgb = RGBColor(0, 112, 192)  # your dark blue
+        new_run.font.color.rgb = RGBColor(0, 112, 192)  # professional blue
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
     # tables
@@ -75,6 +75,9 @@ if submitted:
     else:
         final_brand = brand_custom.strip() if (brand == "Other" and brand_custom.strip()) else brand
 
+        # Clean address formatting (prevent line split)
+        clean_address = address.replace("\n", ", ").replace(",,", ",")
+
         mapping = {
             "{Company}": company,
             "{Category}": category,
@@ -88,7 +91,7 @@ if submitted:
             "{Warranty}": warranty,
             "{CustomerName}": customer_name,
             "{Organisation}": organisation,
-            "{Address}": address,
+            "{Address}": clean_address,
             "{Ministry}": ministry,
             "{Date}": today_str,
         }
@@ -106,12 +109,23 @@ if submitted:
                 run.font.color.rgb = RGBColor(0, 112, 192)
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        # --- NEW: Center company address block (next few lines) ---
+        for i in range(1, 5):  # usually 2–4 lines below header
+            if i < len(doc.paragraphs):
+                p = doc.paragraphs[i]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in p.runs:
+                    run.font.name = "Calibri"
+                    run.font.size = Pt(12)
+                    run.font.color.rgb = RGBColor(0, 112, 192)
+
         # Style "WARRANTY CERTIFICATE"
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
                     run.font.size = Pt(16)
                     run.font.bold = True
+                    run.font.underline = True
                     run.font.color.rgb = RGBColor(0, 112, 192)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
