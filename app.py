@@ -10,7 +10,7 @@ from docx.oxml.ns import nsdecls
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
 
-st.caption("Upload your DOCX template, fill details, and generate a styled warranty certificate automatically.")
+st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically.")
 
 # --- Dropdown Options ---
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
@@ -149,7 +149,6 @@ if submitted:
                     run.font.color.rgb = RGBColor(0, 112, 192)
 
         # --- Controlled Blue Lines ---
-
         # 1️⃣ Line below letterhead
         for i, p in enumerate(doc.paragraphs):
             if "Email" in p.text or "@" in p.text:
@@ -157,17 +156,21 @@ if submitted:
                 add_horizontal_line(new_p)
                 break
 
-        # 2️⃣ Line below Customer / GEM Contract No block
-        customer_index = None
-        gem_index = None
+        # 2️⃣ Properly align Customer/Address/Date block
+        for p in doc.paragraphs:
+            if "Customer" in p.text:
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            if "Date" in p.text:
+                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
         for i, p in enumerate(doc.paragraphs):
-            if "Customer" in p.text and customer_index is None:
-                customer_index = i
-            if "GEM Contract No" in p.text:
-                gem_index = i
-        if gem_index is not None:
-            new_p = doc.paragraphs[gem_index+1].insert_paragraph_before("")
-            add_horizontal_line(new_p)
+            if "Customer" in p.text:
+                for j in range(i, len(doc.paragraphs)):
+                    if "GEM Contract No" in doc.paragraphs[j].text:
+                        new_p = doc.paragraphs[j+1].insert_paragraph_before("")
+                        add_horizontal_line(new_p)
+                        break
+                break
 
         # 3️⃣ Line above Supplied Product Details
         for i, p in enumerate(doc.paragraphs):
@@ -176,7 +179,7 @@ if submitted:
                 add_horizontal_line(new_p)
                 break
 
-        # Warranty title formatting
+        # Warranty title
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
