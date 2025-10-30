@@ -8,7 +8,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
 
-st.caption("Upload your DOCX template, fill details, and generate a perfectly formatted certificate.")
+st.caption("Upload your DOCX template, fill the form, and generate a professionally formatted certificate.")
 
 # Dropdowns
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
@@ -45,7 +45,7 @@ with st.form("wc_form"):
     template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
     submitted = st.form_submit_button("Generate Certificate")
 
-# --- Bulletproof replacement ---
+# --- Fixed replacement function ---
 def merge_and_replace(doc, mapping):
     # paragraphs
     for p in doc.paragraphs:
@@ -53,14 +53,14 @@ def merge_and_replace(doc, mapping):
         for key, val in mapping.items():
             if key in full_text:
                 full_text = full_text.replace(key, val)
-        # remove old runs
-        for i in range(len(p.runs)-1, -1, -1):
+        # clear runs
+        for i in range(len(p.runs) - 1, -1, -1):
             p._element.remove(p.runs[i]._element)
-        # rebuild one run with consistent styling
+        # rebuild single run
         new_run = p.add_run(full_text)
         new_run.font.name = "Calibri"
         new_run.font.size = Pt(12)
-        new_run.font.color.rgb = RGBColor(31, 73, 125)
+        new_run.font.color.rgb = RGBColor(0, 112, 192)  # your dark blue
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
     # tables
@@ -94,8 +94,6 @@ if submitted:
         }
 
         doc = Document(template_file)
-
-        # Perform replacements
         merge_and_replace(doc, mapping)
 
         # Style company heading (first para)
@@ -105,7 +103,7 @@ if submitted:
                 run.font.name = "Calibri"
                 run.font.size = Pt(22)
                 run.font.bold = True
-                run.font.color.rgb = RGBColor(31, 73, 125)
+                run.font.color.rgb = RGBColor(0, 112, 192)
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Style "WARRANTY CERTIFICATE"
@@ -114,7 +112,7 @@ if submitted:
                 for run in p.runs:
                     run.font.size = Pt(16)
                     run.font.bold = True
-                    run.font.color.rgb = RGBColor(31, 73, 125)
+                    run.font.color.rgb = RGBColor(0, 112, 192)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Save and download
@@ -126,8 +124,10 @@ if submitted:
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
         out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        st.success("Warranty Certificate generated with full replacements and Calibri Dark Blue formatting ✅")
-        st.download_button("⬇️ Download DOCX",
-                           data=out_buf,
-                           file_name=out_name,
-                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        st.success("Warranty Certificate generated in Calibri 12pt Blue (RGB 0,112,192) ✅")
+        st.download_button(
+            "⬇️ Download DOCX",
+            data=out_buf,
+            file_name=out_name,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
