@@ -1,0 +1,112 @@
+# app.py
+import io
+from datetime import datetime
+import streamlit as st
+from docx import Document
+
+st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
+st.title("🧾 Warranty Certificate Generator")
+
+st.caption("Fill the fields below and upload your DOCX template. It will generate a ready-to-download warranty certificate.")
+
+# --- dropdowns ---
+companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
+categories = ["AC", "Refrigerator", "Appliances", "Display Panel", "Other"]
+brands = [
+    "Godrej", "Whirlpool", "LG", "Samsung", "Llyod", "Blue Star", "Uniline", "Numeric",
+    "Epson", "Viewsonic", "Acer", "Exide", "Amaron", "Okaya", "Microtek", "Other"
+]
+
+with st.form("wc_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        company = st.selectbox("Company", companies)
+        category = st.selectbox("Category", categories)
+        brand = st.selectbox("Brand (Make)", brands)
+    with col2:
+        product_name = st.text_input("Product Name")
+        model = st.text_input("Model")
+        quantity = st.text_input("Quantity", "1 Unit")
+        serial_no = st.text_input("Serial Number")
+
+    if brand == "Other":
+        brand_custom = st.text_input("Enter Brand (Other)")
+    else:
+        brand_custom = ""
+
+    gem_no = st.text_input("GEM Contract No")
+    warranty = st.text_input("Warranty (e.g., 5 Years)")
+    customer_name = st.text_input("Customer Name / Dept")
+    organisation = st.text_input("Organisation")
+    address = st.text_area("Address")
+    ministry = st.text_input("Ministry")
+
+    today_str = datetime.now().strftime("%d-%m-%Y")
+    st.info(f"Certificate Date will be set to: **{today_str}** automatically")
+
+    template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
+    submitted = st.form_submit_button("Generate Certificate")
+
+def replace_in_paragraph(paragraph, mapping):
+    text = "".join(run.text for run in paragraph.runs) or paragraph.text
+    if not text:
+        return
+    new_text = text
+    for k, v in mapping.items():
+        if k in new_text:
+            new_text = new_text.replace(k, v)
+    if new_text != text:
+        paragraph.clear()
+        paragraph.add_run(new_text)
+
+def replace_in_table(table, mapping):
+    for row in table.rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                replace_in_paragraph(p, mapping)
+
+def apply_mapping(doc, mapping):
+    for p in doc.paragraphs:
+        replace_in_paragraph(p, mapping)
+    for tbl in doc.tables:
+        replace_in_table(tbl, mapping)
+
+if submitted:
+    if not template_file:
+        st.error("Please upload a DOCX template.")
+    else:
+        final_brand = brand_custom if (brand == "Other" and brand_custom.strip()) else brand
+        mapping = {
+            "{Company}": company,
+            "{Category}": category,
+            "{Brand}": final_brand,
+            "{Make}": final_brand,
+            "{ProductName}": product_name,
+            "{Model}": model,
+            "{Quantity}": quantity,
+            "{SerialNumber}": serial_no,
+            "{GEMContractNo}": gem_no,
+            "{Warranty}": warranty,
+            "{CustomerName}": customer_name,
+            "{Organisation}": organisation,
+            "{Address}": address,
+            "{Ministry}": ministry,
+            "{Date}": today_str,
+        }
+
+        doc = Document(template_file)
+        apply_mapping(doc, mapping)
+
+        out_buf = io.BytesIO()
+        doc.save(out_buf)
+        out_buf.seek(0)
+
+        fname_customer = (customer_name or "Customer").replace(" ", "_")
+        fname_gem = (gem_no or "GEM").replace(" ", "_")
+        out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
+
+        st.success("Warranty Certificate generated successfully.")
+        st.download_button("⬇️ Download DOCX",
+                           data=out_buf,
+                           file_name=out_name,
+                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
