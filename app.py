@@ -9,10 +9,9 @@ from docx.oxml.ns import nsdecls
 
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
+st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate.")
 
-st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically.")
-
-# --- Dropdown Options ---
+# --- Options ---
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
 categories = ["AC", "Refrigerator", "Appliances", "Display Panel", "Other"]
 brands = [
@@ -47,82 +46,57 @@ with st.form("wc_form"):
     template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
     submitted = st.form_submit_button("Generate Certificate")
 
-# --- Utility: Add horizontal blue line ---
+# --- Helpers ---
+BLUE = RGBColor(0, 112, 192)
+
 def add_horizontal_line(paragraph):
     p = paragraph._p
     pPr = p.get_or_add_pPr()
-    pBdr = parse_xml(
-        r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>'
-        % nsdecls("w")
-    )
+    pBdr = parse_xml(r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls("w"))
     pPr.append(pBdr)
 
-# --- Merge placeholders (robust) + styling of labels ---
 def render_labeled_paragraph(p, text):
-    """
-    Rebuild a paragraph so that `Label: value` -> bold label, normal value,
-    Calibri 12, dark blue.
-    """
-    # Clear
+    # Clear existing runs
     for i in range(len(p.runs) - 1, -1, -1):
         p._element.remove(p.runs[i]._element)
 
     if ":" in text:
         label, _, value = text.partition(":")
         r1 = p.add_run(label.strip() + ":")
-        r1.font.bold = True
-        r1.font.name = "Calibri"
-        r1.font.size = Pt(12)
-        r1.font.color.rgb = RGBColor(0, 112, 192)
+        r1.font.bold = True; r1.font.name = "Calibri"; r1.font.size = Pt(12); r1.font.color.rgb = BLUE
 
         r2 = p.add_run(" " + value.strip())
-        r2.font.bold = False
-        r2.font.name = "Calibri"
-        r2.font.size = Pt(12)
-        r2.font.color.rgb = RGBColor(0, 112, 192)
+        r2.font.bold = False; r2.font.name = "Calibri"; r2.font.size = Pt(12); r2.font.color.rgb = BLUE
     else:
         r = p.add_run(text)
-        r.font.name = "Calibri"
-        r.font.size = Pt(12)
-        r.font.color.rgb = RGBColor(0, 112, 192)
+        r.font.name = "Calibri"; r.font.size = Pt(12); r.font.color.rgb = BLUE
 
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 def merge_and_replace(doc, mapping):
-    """
-    Robust placeholder replacement:
-    - Replaces ALL occurrences of each {Placeholder}, even if stuck to punctuation
-    - Keeps bold label styling for 'Label: value' lines
-    - Works for paragraphs and table cells
-    """
-    def _process_container(container):
+    def _process(container):
         for p in container.paragraphs:
-            # Join all runs, do plain string replacement for ALL keys
-            original = "".join(run.text for run in p.runs)
+            original = "".join(r.text for r in p.runs)
             replaced = original
-            for key, val in mapping.items():
-                replaced = replaced.replace(key, val)
-
-            # Style as labeled paragraph if it has a colon (Customer:, Date:, etc.)
+            for k, v in mapping.items():
+                replaced = replaced.replace(k, v)
             render_labeled_paragraph(p, replaced)
 
         for table in getattr(container, "tables", []):
             for row in table.rows:
                 for cell in row.cells:
-                    _process_container(cell)
+                    _process(cell)
+    _process(doc)
 
-    _process_container(doc)
-
-# --- Main Process ---
+# --- Main ---
 if submitted:
     if not template_file:
         st.error("Please upload a DOCX template first.")
     else:
-        # Clean Address (preserve commas / user newlines into commas)
-        clean_address = address.replace("\n", ", ").replace(",,", ",")
-
+        clean_address = address.replace("\n", ", ").replace(",,", ",").strip().strip(",")
         final_brand = brand_custom.strip() if (brand == "Other" and brand_custom.strip()) else brand
 
+        # Mapping + placeholder aliases (important!)
         mapping = {
             "{Company}": company,
             "{Category}": category,
@@ -134,38 +108,35 @@ if submitted:
             "{SerialNumber}": serial_no,
             "{GEMContractNo}": gem_no,
             "{Warranty}": warranty,
-            "{WarrantyOnCompressor}": warranty_compressor,
             "{CustomerName}": customer_name,
             "{Organisation}": organisation,
-            "{Address}": clean_address,     # <<< fixed
-            "{Date}": today_str,            # <<< fixed
+            "{Address}": clean_address,
+            "{Date}": today_str,
+            # aliases for compressor warranty
+            "{WarrantyOnCompressor}": warranty_compressor,
+            "{Warranty on Compressor}": warranty_compressor,
+            "{warranty on compressor}": warranty_compressor,
         }
 
         doc = Document(template_file)
         merge_and_replace(doc, mapping)
 
-        # --- STYLING ---
-        # Company heading (first paragraph)
+        # Company heading
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
-                run.font.name = "Calibri"
-                run.font.size = Pt(22)
-                run.font.bold = True
-                run.font.color.rgb = RGBColor(0, 112, 192)
+                run.font.name = "Calibri"; run.font.size = Pt(22); run.font.bold = True; run.font.color.rgb = BLUE
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Center letterhead lines (next few paragraphs)
+        # Center letterhead lines (next few)
         for i in range(1, 7):
             if i < len(doc.paragraphs):
                 p = doc.paragraphs[i]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in p.runs:
-                    run.font.name = "Calibri"
-                    run.font.size = Pt(12)
-                    run.font.color.rgb = RGBColor(0, 112, 192)
+                    run.font.name = "Calibri"; run.font.size = Pt(12); run.font.color.rgb = BLUE
 
-        # 1) Line below letterhead (after email/phone)
+        # 1) Line below letterhead (after email)
         for i, p in enumerate(doc.paragraphs):
             if "Email" in p.text or "@" in p.text:
                 new_p = doc.paragraphs[i+1].insert_paragraph_before("")
@@ -176,27 +147,35 @@ if submitted:
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
-                    run.font.size = Pt(16)
-                    run.font.bold = True
-                    run.font.underline = True
-                    run.font.color.rgb = RGBColor(0, 112, 192)
+                    run.font.size = Pt(16); run.font.bold = True; run.font.underline = True; run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Align Customer left, Date right (paragraph-level)
-        for p in doc.paragraphs:
-            if "Customer" in p.text:
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            if "Date" in p.text:
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-        # 2) Line under the Customer/Address/Date/GEM block (place it right after GEM line)
-        cust_seen = None
+        # -------- Alignment fix for Customer/Address/Date block --------
+        cust_idx = None
+        date_idx = None
         gem_idx = None
         for i, p in enumerate(doc.paragraphs):
-            if "Customer" in p.text and cust_seen is None:
-                cust_seen = i
-            if "GEM Contract No" in p.text:
+            if cust_idx is None and p.text.strip().startswith("Customer:"):
+                cust_idx = i
+            if date_idx is None and p.text.strip().startswith("Date:"):
+                date_idx = i
+            if gem_idx is None and p.text.strip().startswith("GEM Contract No:"):
                 gem_idx = i
+
+        # Keep Customer + Address left, Date right (only those specific paragraphs)
+        if cust_idx is not None:
+            doc.paragraphs[cust_idx].alignment = WD_ALIGN_PARAGRAPH.LEFT
+        if date_idx is not None:
+            doc.paragraphs[date_idx].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+        # If there are address lines between Customer and GEM, force them LEFT
+        if cust_idx is not None and gem_idx is not None:
+            for k in range(cust_idx + 1, gem_idx):
+                # Skip the dedicated Date paragraph; keep other lines (address/organisation) left
+                if k != date_idx:
+                    doc.paragraphs[k].alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        # 2) Line under the Customer/Address/Date/GEM block (right after GEM line)
         if gem_idx is not None:
             new_p = doc.paragraphs[gem_idx+1].insert_paragraph_before("")
             add_horizontal_line(new_p)
@@ -210,14 +189,13 @@ if submitted:
 
         # --- Save & Download ---
         out_buf = io.BytesIO()
-        doc.save(out_buf)
-        out_buf.seek(0)
+        doc.save(out_buf); out_buf.seek(0)
 
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
         out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        st.success("✅ Warranty Certificate formatted perfectly (Date & Address included).")
+        st.success("✅ Certificate generated: address aligned left, date right, compressor warranty filled.")
         st.download_button(
             "⬇️ Download Certificate (DOCX)",
             data=out_buf,
