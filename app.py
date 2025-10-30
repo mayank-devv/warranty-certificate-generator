@@ -8,7 +8,9 @@ from docx.shared import RGBColor, Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
-from docx2pdf import convert  # ✅ NEW: replaces pypandoc
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
 
 # -------------------------------
 # Streamlit Setup
@@ -151,9 +153,7 @@ if submitted:
 
         merge_and_replace(doc, mapping)
 
-        # -------------------------------
-        # Formatting & alignment
-        # -------------------------------
+        # Formatting (titles, lines, alignment)
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
@@ -178,36 +178,8 @@ if submitted:
                     run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        cust_idx, date_idx, gem_idx = None, None, None
-        for i, p in enumerate(doc.paragraphs):
-            if cust_idx is None and p.text.strip().startswith("Customer:"):
-                cust_idx = i
-            if date_idx is None and p.text.strip().startswith("Date:"):
-                date_idx = i
-            if gem_idx is None and p.text.strip().startswith("GEM Contract No:"):
-                gem_idx = i
-
-        if cust_idx is not None:
-            doc.paragraphs[cust_idx].alignment = WD_ALIGN_PARAGRAPH.LEFT
-        if date_idx is not None:
-            doc.paragraphs[date_idx].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        if cust_idx is not None and gem_idx is not None:
-            for k in range(cust_idx + 1, gem_idx):
-                if k != date_idx:
-                    doc.paragraphs[k].alignment = WD_ALIGN_PARAGRAPH.LEFT
-
-        if gem_idx is not None:
-            new_p = doc.paragraphs[gem_idx + 1].insert_paragraph_before("")
-            add_horizontal_line(new_p)
-
-        for i, p in enumerate(doc.paragraphs):
-            if "Supplied Product Details" in p.text:
-                new_p = doc.paragraphs[i].insert_paragraph_before("")
-                add_horizontal_line(new_p)
-                break
-
         # -------------------------------
-        # Save DOCX & Convert to PDF
+        # Save DOCX and generate PDF via ReportLab
         # -------------------------------
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
@@ -217,27 +189,55 @@ if submitted:
         with tempfile.TemporaryDirectory() as tmpdir:
             docx_path = os.path.join(tmpdir, out_name_docx)
             pdf_path = os.path.join(tmpdir, out_name_pdf)
-
             doc.save(docx_path)
 
-            try:
-                convert(docx_path, pdf_path)
-                with open(pdf_path, "rb") as f:
-                    pdf_data = f.read()
-                st.download_button(
-                    "⬇️ Download Certificate (PDF)",
-                    data=pdf_data,
-                    file_name=out_name_pdf,
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"PDF conversion failed: {e}")
-                with open(docx_path, "rb") as f:
-                    st.download_button(
-                        "⬇️ Download Certificate (DOCX)",
-                        data=f.read(),
-                        file_name=out_name_docx,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
+            pdf = canvas.Canvas(pdf_path, pagesize=A4)
+            width, height = A4
+            y = height - 2 * cm
 
-        st.success("✅ Certificate generated successfully (PDF ready).")
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawString(2 * cm, y, company)
+            y -= 1 * cm
+
+            pdf.setFont("Helvetica", 11)
+            pdf.drawString(2 * cm, y, f"Customer: {customer_name}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"Organisation: {organisation}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"Address: {clean_address}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"GEM Contract No: {gem_no}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"Product: {product_name} | Model: {model} | Qty: {quantity}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"Warranty: {warranty}")
+            y -= 0.7 * cm
+            pdf.drawString(2 * cm, y, f"On Compressor: {warranty_compressor}")
+            y -= 1 * cm
+            pdf.drawString(2 * cm, y, f"Date: {today_str}")
+            y -= 2 * cm
+
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(2 * cm, y, "This is to certify that the supplied goods are new and of first quality as per GEM contract.")
+            y -= 1 * cm
+            pdf.line(2 * cm, y, width - 2 * cm, y)
+            y -= 1 * cm
+            pdf.setFont("Helvetica-Bold", 11)
+            pdf.drawString(2 * cm, y, company)
+            y -= 0.5 * cm
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(2 * cm, y, "Authorized Signatory")
+
+            pdf.save()
+
+            with open(pdf_path, "rb") as f:
+                pdf_data = f.read()
+
+            st.download_button(
+                "⬇️ Download Certificate (PDF)",
+                data=pdf_data,
+                file_name=out_name_pdf,
+                mime="application/pdf"
+            )
+
+        st.success("✅ Certificate generated successfully as PDF!")
