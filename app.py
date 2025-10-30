@@ -1,6 +1,4 @@
 import io
-import tempfile
-import os
 from datetime import datetime
 import streamlit as st
 from docx import Document
@@ -8,19 +6,16 @@ from docx.shared import RGBColor, Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import cm
 
 # -------------------------------
-# Streamlit Setup
+# Streamlit Page Setup
 # -------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
-st.caption("Upload DOCX template → Fill details → Get formatted Warranty Certificate as PDF")
+st.caption("Upload your DOCX template, fill details, and generate a formatted warranty certificate automatically.")
 
 # -------------------------------
-# Options
+# Dropdowns
 # -------------------------------
 companies = ["Mathuralal Balkishan India", "Shrii Salez Corporation"]
 categories = ["AC", "Refrigerator", "Appliances", "Display Panel", "Other"]
@@ -64,15 +59,14 @@ with st.form("wc_form"):
 BLUE = RGBColor(0, 112, 192)
 
 def add_horizontal_line(paragraph):
+    """Draws a blue line under a paragraph"""
     p = paragraph._p
     pPr = p.get_or_add_pPr()
-    pBdr = parse_xml(
-        r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>'
-        % nsdecls("w")
-    )
+    pBdr = parse_xml(r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls("w"))
     pPr.append(pBdr)
 
 def render_labeled_paragraph(p, text):
+    """Styles label:value lines (bold label, normal value)"""
     for i in range(len(p.runs) - 1, -1, -1):
         p._element.remove(p.runs[i]._element)
 
@@ -98,6 +92,7 @@ def render_labeled_paragraph(p, text):
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 def merge_and_replace(doc, mapping):
+    """Replaces placeholders in document and keeps formatting consistent"""
     def _process(container):
         for p in container.paragraphs:
             original = "".join(r.text for r in p.runs)
@@ -122,6 +117,7 @@ if submitted:
         clean_address = address.replace("\n", ", ").replace(",,", ",").strip().strip(",")
         final_brand = brand_custom.strip() if (brand == "Other" and brand_custom.strip()) else brand
 
+        # Placeholder mapping
         mapping = {
             "{Company}": company,
             "{Category}": category,
@@ -142,18 +138,23 @@ if submitted:
             "{warranty on compressor}": warranty_compressor,
         }
 
+        # Load document
         doc = Document(template_file)
 
-        # --- Narrow Layout ---
+        # --- Set page layout to Narrow ---
         for section in doc.sections:
             section.top_margin = Inches(0.5)
             section.bottom_margin = Inches(0.5)
             section.left_margin = Inches(0.5)
             section.right_margin = Inches(0.5)
 
+        # Replace placeholders
         merge_and_replace(doc, mapping)
 
-        # Formatting (titles, lines, alignment)
+        # -------------------------------
+        # Styling & Layout
+        # -------------------------------
+        # Company Heading
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
@@ -163,12 +164,24 @@ if submitted:
                 run.font.color.rgb = BLUE
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        # Center letterhead lines
+        for i in range(1, 7):
+            if i < len(doc.paragraphs):
+                p = doc.paragraphs[i]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in p.runs:
+                    run.font.name = "Calibri"
+                    run.font.size = Pt(12)
+                    run.font.color.rgb = BLUE
+
+        # Line below letterhead
         for i, p in enumerate(doc.paragraphs):
             if "Email" in p.text or "@" in p.text:
-                new_p = doc.paragraphs[i + 1].insert_paragraph_before("")
+                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
                 add_horizontal_line(new_p)
                 break
 
+        # Warranty Certificate title
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
@@ -178,66 +191,54 @@ if submitted:
                     run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        # Customer, Address, Date alignment fix
+        cust_idx = None
+        date_idx = None
+        gem_idx = None
+        for i, p in enumerate(doc.paragraphs):
+            if cust_idx is None and p.text.strip().startswith("Customer:"):
+                cust_idx = i
+            if date_idx is None and p.text.strip().startswith("Date:"):
+                date_idx = i
+            if gem_idx is None and p.text.strip().startswith("GEM Contract No:"):
+                gem_idx = i
+
+        if cust_idx is not None:
+            doc.paragraphs[cust_idx].alignment = WD_ALIGN_PARAGRAPH.LEFT
+        if date_idx is not None:
+            doc.paragraphs[date_idx].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if cust_idx is not None and gem_idx is not None:
+            for k in range(cust_idx + 1, gem_idx):
+                if k != date_idx:
+                    doc.paragraphs[k].alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        # Line below GEM block
+        if gem_idx is not None:
+            new_p = doc.paragraphs[gem_idx+1].insert_paragraph_before("")
+            add_horizontal_line(new_p)
+
+        # Line above Supplied Product Details
+        for i, p in enumerate(doc.paragraphs):
+            if "Supplied Product Details" in p.text:
+                new_p = doc.paragraphs[i].insert_paragraph_before("")
+                add_horizontal_line(new_p)
+                break
+
         # -------------------------------
-        # Save DOCX and generate PDF via ReportLab
+        # Save and Download
         # -------------------------------
+        out_buf = io.BytesIO()
+        doc.save(out_buf)
+        out_buf.seek(0)
+
         fname_customer = (customer_name or "Customer").replace(" ", "_").strip("_")
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
-        out_name_docx = f"Warranty_{fname_customer}_{fname_gem}.docx"
-        out_name_pdf = f"Warranty_{fname_customer}_{fname_gem}.pdf"
+        out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            docx_path = os.path.join(tmpdir, out_name_docx)
-            pdf_path = os.path.join(tmpdir, out_name_pdf)
-            doc.save(docx_path)
-
-            pdf = canvas.Canvas(pdf_path, pagesize=A4)
-            width, height = A4
-            y = height - 2 * cm
-
-            pdf.setFont("Helvetica-Bold", 14)
-            pdf.drawString(2 * cm, y, company)
-            y -= 1 * cm
-
-            pdf.setFont("Helvetica", 11)
-            pdf.drawString(2 * cm, y, f"Customer: {customer_name}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"Organisation: {organisation}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"Address: {clean_address}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"GEM Contract No: {gem_no}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"Product: {product_name} | Model: {model} | Qty: {quantity}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"Warranty: {warranty}")
-            y -= 0.7 * cm
-            pdf.drawString(2 * cm, y, f"On Compressor: {warranty_compressor}")
-            y -= 1 * cm
-            pdf.drawString(2 * cm, y, f"Date: {today_str}")
-            y -= 2 * cm
-
-            pdf.setFont("Helvetica", 10)
-            pdf.drawString(2 * cm, y, "This is to certify that the supplied goods are new and of first quality as per GEM contract.")
-            y -= 1 * cm
-            pdf.line(2 * cm, y, width - 2 * cm, y)
-            y -= 1 * cm
-            pdf.setFont("Helvetica-Bold", 11)
-            pdf.drawString(2 * cm, y, company)
-            y -= 0.5 * cm
-            pdf.setFont("Helvetica", 10)
-            pdf.drawString(2 * cm, y, "Authorized Signatory")
-
-            pdf.save()
-
-            with open(pdf_path, "rb") as f:
-                pdf_data = f.read()
-
-            st.download_button(
-                "⬇️ Download Certificate (PDF)",
-                data=pdf_data,
-                file_name=out_name_pdf,
-                mime="application/pdf"
-            )
-
-        st.success("✅ Certificate generated successfully as PDF!")
+        st.success("✅ Certificate generated successfully with Narrow layout and correct alignment.")
+        st.download_button(
+            "⬇️ Download Certificate (DOCX)",
+            data=out_buf,
+            file_name=out_name,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
