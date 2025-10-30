@@ -4,6 +4,8 @@ import streamlit as st
 from docx import Document
 from docx.shared import RGBColor, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
 
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
@@ -33,11 +35,11 @@ with st.form("wc_form"):
 
     brand_custom = st.text_input("Enter Brand (if Other)") if brand == "Other" else ""
     gem_no = st.text_input("GEM Contract No")
-    warranty = st.text_input("Warranty (e.g., 5 Years)")
+    warranty = st.text_input("Warranty (e.g., 5 Years Overall)")
+    warranty_compressor = st.text_input("Warranty on Compressor (e.g., 10 Years)")
     customer_name = st.text_input("Customer Name / Dept")
     organisation = st.text_input("Organisation")
     address = st.text_area("Address (use commas or new lines)")
-    ministry = st.text_input("Ministry")
 
     today_str = datetime.now().strftime("%d-%m-%Y")
     st.info(f"Certificate Date will be automatically set to: **{today_str}**")
@@ -45,37 +47,62 @@ with st.form("wc_form"):
     template_file = st.file_uploader("Upload DOCX Template", type=["docx"])
     submitted = st.form_submit_button("Generate Certificate")
 
-# --- Fixed replacement function ---
+# Replacement logic
 def merge_and_replace(doc, mapping):
-    # paragraphs
     for p in doc.paragraphs:
         full_text = "".join(run.text for run in p.runs)
         for key, val in mapping.items():
             if key in full_text:
-                full_text = full_text.replace(key, val)
-        # clear runs
+                if ":" in full_text:
+                    label, _, rest = full_text.partition(":")
+                    full_text = label + ": " + val
+                else:
+                    full_text = full_text.replace(key, val)
+
         for i in range(len(p.runs) - 1, -1, -1):
             p._element.remove(p.runs[i]._element)
-        # rebuild single run
-        new_run = p.add_run(full_text)
-        new_run.font.name = "Calibri"
-        new_run.font.size = Pt(12)
-        new_run.font.color.rgb = RGBColor(0, 112, 192)  # professional blue
+
+        # Create styled text runs (label bold, value normal)
+        if ":" in full_text:
+            parts = full_text.split(":")
+            run_label = p.add_run(parts[0] + ":")
+            run_label.font.bold = True
+            run_label.font.name = "Calibri"
+            run_label.font.size = Pt(12)
+            run_label.font.color.rgb = RGBColor(0, 112, 192)
+
+            if len(parts) > 1:
+                run_value = p.add_run(parts[1])
+                run_value.font.bold = False
+                run_value.font.name = "Calibri"
+                run_value.font.size = Pt(12)
+                run_value.font.color.rgb = RGBColor(0, 112, 192)
+        else:
+            new_run = p.add_run(full_text)
+            new_run.font.name = "Calibri"
+            new_run.font.size = Pt(12)
+            new_run.font.color.rgb = RGBColor(0, 112, 192)
+
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    # tables
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 merge_and_replace(cell, mapping)
+
+# Add line function
+def add_horizontal_line(paragraph):
+    """Adds a thin blue line below the given paragraph."""
+    p = paragraph._p
+    pPr = p.get_or_add_pPr()
+    pBdr = parse_xml(r'<w:pBdr %s><w:bottom w:val="single" w:sz="4" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls('w'))
+    pPr.append(pBdr)
 
 if submitted:
     if not template_file:
         st.error("Please upload a DOCX template first.")
     else:
         final_brand = brand_custom.strip() if (brand == "Other" and brand_custom.strip()) else brand
-
-        # Clean address formatting (prevent line split)
         clean_address = address.replace("\n", ", ").replace(",,", ",")
 
         mapping = {
@@ -89,17 +116,20 @@ if submitted:
             "{SerialNumber}": serial_no,
             "{GEMContractNo}": gem_no,
             "{Warranty}": warranty,
+            "{WarrantyOnCompressor}": warranty_compressor,
             "{CustomerName}": customer_name,
             "{Organisation}": organisation,
             "{Address}": clean_address,
-            "{Ministry}": ministry,
             "{Date}": today_str,
         }
 
         doc = Document(template_file)
         merge_and_replace(doc, mapping)
 
-        # Style company heading (first para)
+        # Add "• On Compressor : ..." line if template doesn't already have it
+        doc.add_paragraph(f"• On Compressor : {warranty_compressor}")
+
+        # Company heading
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
@@ -109,8 +139,8 @@ if submitted:
                 run.font.color.rgb = RGBColor(0, 112, 192)
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # --- NEW: Center company address block (next few lines) ---
-        for i in range(1, 5):  # usually 2–4 lines below header
+        # Center full letterhead + 2 lines below
+        for i in range(1, 7):
             if i < len(doc.paragraphs):
                 p = doc.paragraphs[i]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -119,7 +149,19 @@ if submitted:
                     run.font.size = Pt(12)
                     run.font.color.rgb = RGBColor(0, 112, 192)
 
-        # Style "WARRANTY CERTIFICATE"
+        # Add horizontal lines
+        if len(doc.paragraphs) > 6:
+            add_horizontal_line(doc.paragraphs[6])
+
+        for p in doc.paragraphs:
+            if "GEM Contract No" in p.text:
+                add_horizontal_line(p)
+            if "Supplied Product Details" in p.text:
+                idx = doc.paragraphs.index(p)
+                if idx > 0:
+                    add_horizontal_line(doc.paragraphs[idx - 1])
+
+        # Warranty Certificate heading
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
@@ -129,7 +171,7 @@ if submitted:
                     run.font.color.rgb = RGBColor(0, 112, 192)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Save and download
+        # Save & Download
         out_buf = io.BytesIO()
         doc.save(out_buf)
         out_buf.seek(0)
@@ -138,7 +180,7 @@ if submitted:
         fname_gem = (gem_no or "GEM").replace(" ", "_").strip("_")
         out_name = f"Warranty_{fname_customer}_{fname_gem}.docx"
 
-        st.success("Warranty Certificate generated in Calibri 12pt Blue (RGB 0,112,192) ✅")
+        st.success("Warranty Certificate generated (with Compressor warranty) ✅")
         st.download_button(
             "⬇️ Download DOCX",
             data=out_buf,
