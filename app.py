@@ -29,6 +29,21 @@ def add_line(p):
     xml = r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls("w")
     pPr.append(parse_xml(xml))
 
+def align_left(p):
+    p._p.get_or_add_pPr().append(
+        parse_xml(r'<w:jc w:val="left" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
+    )
+
+def align_center(p):
+    p._p.get_or_add_pPr().append(
+        parse_xml(r'<w:jc w:val="center" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
+    )
+
+def align_right(p):
+    p._p.get_or_add_pPr().append(
+        parse_xml(r'<w:jc w:val="right" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
+    )
+
 def parse_block(text):
     out = {}
     for line in text.split("\n"):
@@ -59,7 +74,6 @@ if st.button("Generate Certificate"):
     d = parse_block(raw_text)
     today = datetime.now().strftime("%d-%m-%Y")
 
-    # Warranty block (1 paragraph with line breaks)
     warranty_block = (
         "Warranty can be checked anytime by contacting OEM customer care.\n"
         "Warranty is taken care of by OEM as per their terms & conditions. "
@@ -67,25 +81,17 @@ if st.button("Generate Certificate"):
     )
 
     # ---------------------------------------------------------
-    # ADDRESS CLEANING
+    # CLEAN ADDRESS
     # ---------------------------------------------------------
     raw_addr = d.get("Address", "")
     addr = " ".join(raw_addr.split())
-
-    break_keys = [
-        "DIVISION","CWC","OPP.","NEAR","BEHIND","OFFICE","BUILDING",
-        "FLOOR","ROAD","MARG","AREA","COLONY"
-    ]
-
     parts = addr.replace(",", ", ").split(",")
+
     lines = []
     buf = ""
 
-    for p in parts:
-        seg = p.strip()
-        if any(seg.upper().startswith(k) for k in break_keys):
-            lines.append(seg)
-            continue
+    for seg in parts:
+        seg = seg.strip()
         if len(seg) > 30:
             lines.append(seg)
             continue
@@ -100,7 +106,7 @@ if st.button("Generate Certificate"):
     final_address = lines
 
     # ---------------------------------------------------------
-    # MAPPING
+    # PLACEHOLDER MAPPING
     # ---------------------------------------------------------
     mapping = {
         "{Company}": d.get("Company", ""),
@@ -113,19 +119,16 @@ if st.button("Generate Certificate"):
         "{Quantity}": d.get("Quantity", ""),
         "{Warranty}": d.get("Warranty", ""),
         "{WarrantyOnCompressor}": d.get("Warranty on Compressor", ""),
-        "{warranty on compressor}": d.get("Warranty on Compressor", ""),
         "{CustomerName}": d.get("Customer Name", ""),
-
         "{Organisation}": "",
         "{Address}": "",
-
         "{WarrantyBlock}": warranty_block,
         "{GEMContractNo}": d.get("GEM Contract No", ""),
         "{Date}": today,
     }
 
     # ---------------------------------------------------------
-    # PROCESS DOCUMENT
+    # LOAD DOCX
     # ---------------------------------------------------------
     doc = Document(template_file)
 
@@ -143,7 +146,7 @@ if st.button("Generate Certificate"):
         p.text = txt
 
     # ---------------------------------------------------------
-    # REBUILD CUSTOMER BLOCK (NO TAB STOPS, NO ALIGN ENUM)
+    # REBUILD CUSTOMER BLOCK
     # ---------------------------------------------------------
     insert_index = None
     for i, p in enumerate(doc.paragraphs):
@@ -151,58 +154,54 @@ if st.button("Generate Certificate"):
             insert_index = i
             break
 
-    # Delete old block
+    # remove 4–5 old paragraphs
     for _ in range(5):
         if insert_index < len(doc.paragraphs):
             para = doc.paragraphs[insert_index]
             parent = para._p.getparent()
             parent.remove(para._p)
-        else:
-            break
 
     cust_name = d.get("Customer Name", "")
     organisation = d.get("Organisation", "")
 
-    # Construct long single professional line with spaces
-    header_line = f"Customer: {cust_name}"
-    header_line = f"{header_line}{' '*40}Date: {today}"
+    line1 = f"Customer: {cust_name}{' '*40}Date: {today}"
 
-    # Paragraph 1
-    p1 = doc.paragraphs.insert(insert_index, header_line)
-    p1.alignment = 0    # LEFT
+    # Paragraph 1 — LEFT
+    p1 = doc.paragraphs.insert(insert_index, line1)
     apply_blue(p1)
+    align_left(p1)
 
-    # Paragraph 2
+    # Paragraph 2 — Organisation
     p2 = doc.paragraphs.insert(insert_index + 1, organisation)
-    p2.alignment = 0
     apply_blue(p2)
+    align_left(p2)
 
     # Address lines
     base = insert_index + 2
     for j, line in enumerate(final_address):
         p = doc.paragraphs.insert(base + j, line)
-        p.alignment = 0
         apply_blue(p)
+        align_left(p)
 
     # ---------------------------------------------------------
-    # FIX LETTERHEAD (Top 5 non-empty)
+    # LETTERHEAD CENTER
     # ---------------------------------------------------------
     non_empty = [p for p in doc.paragraphs if p.text.strip()]
     for i in range(min(5, len(non_empty))):
         p = non_empty[i]
-        p.alignment = 1  # CENTER
+        align_center(p)
         for r in p.runs:
             r.font.color.rgb = BLUE
             r.font.name = "Calibri"
             r.font.size = Pt(22 if i == 0 else 12)
-            r.font.bold = True if i == 0 else False
+            r.font.bold = (i == 0)
 
     # ---------------------------------------------------------
-    # FIX WARRANTY CERTIFICATE HEADING
+    # WARRANTY CERTIFICATE HEADING
     # ---------------------------------------------------------
     for p in doc.paragraphs:
         if p.text.strip().upper() == "WARRANTY CERTIFICATE":
-            p.alignment = 1
+            align_center(p)
             for r in p.runs:
                 r.font.bold = True
                 r.font.underline = True
@@ -214,9 +213,7 @@ if st.button("Generate Certificate"):
     # ---------------------------------------------------------
     for p in doc.paragraphs:
         if warranty_block.split("\n")[0] in p.text:
-            p.alignment = 0
-            p.paragraph_format.left_indent = None
-            p.paragraph_format.right_indent = None
+            align_left(p)
             apply_blue(p)
             break
 
