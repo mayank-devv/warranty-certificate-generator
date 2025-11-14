@@ -12,7 +12,7 @@ from docx.oxml.ns import nsdecls
 # ---------------------------------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
-st.caption("Upload template + paste extracted details → auto-generate warranty certificate.")
+st.caption("Upload template + paste extracted details → auto-generate final certificate.")
 
 # ---------------------------------------------------------
 # INPUTS
@@ -79,6 +79,15 @@ if st.button("Generate Certificate"):
     today = datetime.now().strftime("%d-%m-%Y")
 
     # -------------------------------
+    # CREATE WARRANTY BLOCK (Option B)
+    # -------------------------------
+    warranty_block = (
+        "Warranty can be checked anytime by contacting OEM customer care.\n"
+        "Warranty is taken care of by OEM as per their terms & conditions. "
+        "Original Warranty certificate is to be taken by above if needed."
+    )
+
+    # -------------------------------
     # MULTILINE ADDRESS CLEANING
     # -------------------------------
     raw_address = details.get("Address", "").strip()
@@ -135,9 +144,12 @@ if st.button("Generate Certificate"):
 
         "{CustomerName}": details.get("Customer Name", ""),
 
-        # CRITICAL FIX → Always add a newline between Org + Address
+        # Always force break between Organisation and Address
         "{Organisation}": details.get("Organisation", "") + "\n",
         "{Address}": final_address,
+
+        # Warranty block addition
+        "{WarrantyBlock}": warranty_block,
 
         "{GEMContractNo}": details.get("GEM Contract No", ""),
         "{Date}": today,
@@ -168,7 +180,7 @@ if st.button("Generate Certificate"):
             style_label_value(p)
 
     # -------------------------------
-    # MAKE LETTERHEAD CENTERED
+    # FIX LETTERHEAD CENTER
     # -------------------------------
     non_empty = [p for p in doc.paragraphs if p.text.strip()]
     for i in range(min(5, len(non_empty))):
@@ -181,16 +193,32 @@ if st.button("Generate Certificate"):
             r.font.bold = True if i == 0 else False
 
     # -------------------------------
-    # CENTER WARRANTY CERTIFICATE
+    # FIX WARRANTY CERTIFICATE HEADING
     # -------------------------------
     for p in doc.paragraphs:
-        if "WARRANTY CERTIFICATE" in p.text.upper():
+        if p.text.strip().upper() == "WARRANTY CERTIFICATE":
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for r in p.runs:
                 r.font.size = Pt(16)
                 r.font.bold = True
                 r.font.underline = True
                 r.font.color.rgb = BLUE
+
+    # -------------------------------
+    # WARRANTY BLOCK (Option B)
+    # -------------------------------
+    for p in doc.paragraphs:
+        if warranty_block.split("\n")[0] in p.text:
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.left_indent = None
+            p.paragraph_format.right_indent = None
+            for r in p.runs:
+                r.font.bold = False
+                r.font.underline = False
+                r.font.size = Pt(12)
+                r.font.color.rgb = BLUE
+                r.font.name = "Calibri"
+            break
 
     # -------------------------------
     # DATE MUST BE RIGHT-ALIGNED
@@ -203,14 +231,14 @@ if st.button("Generate Certificate"):
     # -------------------------------
     # BLUE LINES
     # -------------------------------
-    # Line under header
+    # Under header
     for i, p in enumerate(doc.paragraphs):
-        if "Email" in p.text or "@" in p.text:
+        if "@" in p.text or "Email" in p.text:
             pp = doc.paragraphs[i+1].insert_paragraph_before("")
             add_line(pp)
             break
 
-    # Line under GEM Contract
+    # Under GEM Contract
     for i, p in enumerate(doc.paragraphs):
         if "GEM Contract No" in p.text:
             pp = doc.paragraphs[i+1].insert_paragraph_before("")
