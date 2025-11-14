@@ -58,10 +58,9 @@ if st.button("Generate Certificate"):
         st.stop()
 
     d = parse_block(raw_text)
-
     today = datetime.now().strftime("%d-%m-%Y")
 
-    # Warranty block (1 paragraph with forced line breaks)
+    # Warranty block (1 paragraph with line breaks)
     warranty_block = (
         "Warranty can be checked anytime by contacting OEM customer care.\n"
         "Warranty is taken care of by OEM as per their terms & conditions. "
@@ -102,7 +101,7 @@ if st.button("Generate Certificate"):
     final_address = lines
 
     # ---------------------------------------------------------
-    # PLACEHOLDER MAPPING
+    # MAPPING
     # ---------------------------------------------------------
     mapping = {
         "{Company}": d.get("Company", ""),
@@ -118,7 +117,6 @@ if st.button("Generate Certificate"):
         "{warranty on compressor}": d.get("Warranty on Compressor", ""),
         "{CustomerName}": d.get("Customer Name", ""),
 
-        # We rebuild Organisation + Address manually
         "{Organisation}": "",
         "{Address}": "",
 
@@ -146,7 +144,7 @@ if st.button("Generate Certificate"):
         p.text = text
 
     # ---------------------------------------------------------
-    # REBUILD CUSTOMER BLOCK (v5)
+    # REBUILD CUSTOMER BLOCK (NO TAB STOPS)
     # ---------------------------------------------------------
     insert_index = None
     for i, p in enumerate(doc.paragraphs):
@@ -154,7 +152,7 @@ if st.button("Generate Certificate"):
             insert_index = i
             break
 
-    # Remove old block (template formatting broken)
+    # Remove old template block
     for _ in range(5):
         if insert_index < len(doc.paragraphs):
             para = doc.paragraphs[insert_index]
@@ -166,18 +164,24 @@ if st.button("Generate Certificate"):
     cust_name = d.get("Customer Name", "")
     organisation = d.get("Organisation", "")
 
-    # --- Paragraph 1: Customer + Date (long line)
-    p1 = doc.paragraphs.insert(insert_index, f"Customer: {cust_name}\tDate: {today}")
-    p1.paragraph_format.tab_stops.add_tab_stop(Inches(6.0))
+    # ---------------------------------------------------------
+    # Create Customer + Date using simple padded spaces (stable)
+    # ---------------------------------------------------------
+    long_line = f"Customer: {cust_name}"
+    spaces = " " * 40
+    long_line = f"{long_line}{spaces}Date: {today}"
+
+    # Paragraph 1
+    p1 = doc.paragraphs.insert(insert_index, long_line)
     p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
     apply_blue(p1)
 
-    # --- Paragraph 2: Organisation
+    # Paragraph 2 (Organisation)
     p2 = doc.paragraphs.insert(insert_index + 1, organisation)
     p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
     apply_blue(p2)
 
-    # --- Paragraph 3+: Address Lines
+    # Address lines
     base = insert_index + 2
     for j, line in enumerate(final_address):
         p = doc.paragraphs.insert(base + j, line)
@@ -185,7 +189,7 @@ if st.button("Generate Certificate"):
         apply_blue(p)
 
     # ---------------------------------------------------------
-    # FIX LETTERHEAD (Top 5 non-empty)
+    # FIX LETTERHEAD
     # ---------------------------------------------------------
     non_empty = [p for p in doc.paragraphs if p.text.strip()]
     for i in range(min(5, len(non_empty))):
@@ -210,7 +214,7 @@ if st.button("Generate Certificate"):
                 r.font.color.rgb = BLUE
 
     # ---------------------------------------------------------
-    # FIX WARRANTY BLOCK (left aligned)
+    # WARRANTY BLOCK LEFT
     # ---------------------------------------------------------
     for p in doc.paragraphs:
         if warranty_block.split("\n")[0] in p.text:
@@ -221,16 +225,14 @@ if st.button("Generate Certificate"):
             break
 
     # ---------------------------------------------------------
-    # DRAW BLUE LINES
+    # BLUE LINES
     # ---------------------------------------------------------
-    # Line under header
     for i, p in enumerate(doc.paragraphs):
         if "@" in p.text:
             newp = doc.paragraphs[i+1].insert_paragraph_before("")
             add_line(newp)
             break
 
-    # Line under GEM Contract
     for i, p in enumerate(doc.paragraphs):
         if "GEM Contract No" in p.text:
             newp = doc.paragraphs[i+1].insert_paragraph_before("")
