@@ -42,9 +42,11 @@ def add_horizontal_line(paragraph):
     pPr.append(pBdr)
 
 def render_labeled_paragraph(p, text):
+    # Clean all runs
     for i in range(len(p.runs) - 1, -1, -1):
         p._element.remove(p.runs[i]._element)
 
+    # Rebuild formatted text
     if ":" in text:
         label, _, value = text.partition(":")
         r1 = p.add_run(label.strip() + ":")
@@ -69,16 +71,23 @@ def render_labeled_paragraph(p, text):
 def merge_and_replace(doc, mapping):
     def _process(container):
         for p in container.paragraphs:
+            # Skip letterhead paragraphs so formatting does not get overwritten
+            para_index = p._p.getparent().index(p._p)
+            if para_index < 7:  # First 7 lines reserved for letterhead
+                continue
+
             original = "".join(r.text for r in p.runs)
             replaced = original
             for k, v in mapping.items():
                 replaced = replaced.replace(k, v)
+
             render_labeled_paragraph(p, replaced)
 
         for table in getattr(container, "tables", []):
             for row in table.rows:
                 for cell in row.cells:
                     _process(cell)
+
     _process(doc)
 
 # -------------------------------
@@ -103,6 +112,7 @@ if st.button("Generate Certificate"):
     else:
         details = parse_text_block(raw_text)
 
+        # Mapping placeholders
         mapping = {
             "{Company}": details.get("Company", ""),
             "{Brand}": details.get("Brand", ""),
@@ -133,26 +143,26 @@ if st.button("Generate Certificate"):
         # Replace placeholders
         merge_and_replace(doc, mapping)
 
-        # Letterhead formatting
-        if doc.paragraphs:
-            header = doc.paragraphs[0]
-            for run in header.runs:
-                run.font.name = "Calibri"
-                run.font.size = Pt(22)
-                run.font.bold = True
-                run.font.color.rgb = BLUE
-            header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # -------------------------------
+        # CENTER LETTERHEAD (Final Fix)
+        # -------------------------------
+        for i in range(0, 7):
+            if i < len(doc.paragraphs):
+                para = doc.paragraphs[i]
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in para.runs:
+                    run.font.name = "Calibri"
+                    run.font.color.rgb = BLUE
+                    # First line = big title
+                    if i == 0:
+                        run.font.size = Pt(22)
+                        run.font.bold = True
+                    else:
+                        run.font.size = Pt(12)
 
-        # -------- ADD LINES LIKE ORIGINAL VERSION --------
-
-        # Line below letterhead (after email or @)
-        for i, p in enumerate(doc.paragraphs):
-            if "@" in p.text or "Email" in p.text:
-                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
-                add_horizontal_line(new_p)
-                break
-
-        # Warranty Certificate title
+        # -------------------------------
+        # WARRANTY CERTIFICATE TITLE STYLE
+        # -------------------------------
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
@@ -162,23 +172,34 @@ if st.button("Generate Certificate"):
                     run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Identify GEM block → add line below it
+        # -------------------------------
+        # BLUE LINES (Restored)
+        # -------------------------------
+
+        # Line under letterhead block
+        for i, p in enumerate(doc.paragraphs):
+            if "@" in p.text or "Email" in p.text:
+                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
+                add_horizontal_line(new_p)
+                break
+
+        # Line below GEM block
         for i, p in enumerate(doc.paragraphs):
             if "GEM Contract No" in p.text:
                 new_p = doc.paragraphs[i+1].insert_paragraph_before("")
                 add_horizontal_line(new_p)
                 break
 
-        # Identify "Supplied Product Details" → add line above
+        # Line above supplied product details
         for i, p in enumerate(doc.paragraphs):
             if "Supplied Product Details" in p.text:
                 new_p = doc.paragraphs[i].insert_paragraph_before("")
                 add_horizontal_line(new_p)
                 break
 
-        # --------------------------------------------------
-
-        # Output
+        # -------------------------------
+        # OUTPUT FILE
+        # -------------------------------
         out_buf = io.BytesIO()
         doc.save(out_buf)
         out_buf.seek(0)
