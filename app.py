@@ -3,92 +3,149 @@ from datetime import datetime
 import streamlit as st
 from docx import Document
 from docx.shared import RGBColor, Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
-
-# ============================================================
-# XML ALIGNMENT HELPERS (bulletproof)
-# ============================================================
-def align_xml(obj, val):
-    obj._element.get_or_add_pPr().append(
-        parse_xml(
-            f'<w:jc w:val="{val}" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'  # noqa
-        )
-    )
-
-
-def cell_align(cell, val):
-    for p in cell.paragraphs:
-        align_xml(p, val)
-
-
-def color_blue(cell):
-    for p in cell.paragraphs:
-        for r in p.runs:
-            r.font.color.rgb = RGBColor(0, 112, 192)
-            r.font.name = "Calibri"
-            r.font.size = Pt(12)
-
-
-# ============================================================
-# STREAMLIT UI
-# ============================================================
+# ---------------------------------------------------------
+# STREAMLIT CONFIG
+# ---------------------------------------------------------
 st.set_page_config(page_title="Warranty Certificate Generator", page_icon="🧾", layout="centered")
 st.title("🧾 Warranty Certificate Generator")
+st.caption("Upload template + paste extracted details → auto-generate warranty certificate.")
 
-raw_text = st.text_area("Paste Extracted Details (Option A Block):", height=250)
-template_file = st.file_uploader("Upload Warranty Template (.docx)", type=["docx"])
+# ---------------------------------------------------------
+# INPUTS
+# ---------------------------------------------------------
+raw_text = st.text_area("Paste Extracted Details (Option A format)", height=350)
+template_file = st.file_uploader("Upload Warranty Certificate Template (.docx)", type=["docx"])
 
+# ---------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------
+BLUE = RGBColor(0, 112, 192)
 
-# ============================================================
-# MAIN PROCESS
-# ============================================================
-if st.button("Generate Certificate"):
+def add_line(p):
+    pPr = p._p.get_or_add_pPr()
+    xml = r'<w:pBdr %s><w:bottom w:val="single" w:sz="6" w:space="1" w:color="0070C0"/></w:pBdr>' % nsdecls("w")
+    pPr.append(parse_xml(xml))
 
-    if not template_file:
-        st.error("Upload a template DOCX.")
-        st.stop()
-
-    if not raw_text.strip():
-        st.error("Paste extracted block.")
-        st.stop()
-
-    today = datetime.now().strftime("%d-%m-%Y")
-
-    # --------------------
-    # Parse block
-    # --------------------
+def parse_block(text):
     data = {}
-    for line in raw_text.split("\n"):
+    for line in text.split("\n"):
         if ":" in line:
             k, _, v = line.partition(":")
             data[k.strip()] = v.strip()
+    return data
 
-    # --------------------
-    # Clean Address
-    # --------------------
-    raw_addr = data.get("Address", "")
-    raw_addr = " ".join(raw_addr.split())  # remove weird spacing
-    parts = raw_addr.replace(",", ", ").split(",")
+def style_label_value(p):
+    t = p.text
+    if ":" in t:
+        p.clear()
+        label, _, value = t.partition(":")
+        r1 = p.add_run(label.strip() + ":")
+        r1.font.bold = True
+        r1.font.name = "Calibri"
+        r1.font.color.rgb = BLUE
+        r1.font.size = Pt(12)
 
-    addr_lines = []
-    buffer = ""
-    for seg in parts:
-        seg = seg.strip()
-        if len(seg) > 40:
-            addr_lines.append(seg)
+        r2 = p.add_run(" " + value.strip())
+        r2.font.bold = False
+        r2.font.name = "Calibri"
+        r2.font.color.rgb = BLUE
+        r2.font.size = Pt(12)
+    else:
+        for r in p.runs:
+            r.font.color.rgb = BLUE
+            r.font.name = "Calibri"
+            r.font.size = Pt(12)
+
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
+if st.button("Generate Certificate"):
+
+    if not template_file:
+        st.error("Upload a DOCX template.")
+        st.stop()
+
+    if not raw_text.strip():
+        st.error("Paste the extracted details block.")
+        st.stop()
+
+    details = parse_block(raw_text)
+
+    # Always today's date
+    today = datetime.now().strftime("%d-%m-%Y")
+
+    # -------------------------------
+    # MULTILINE ADDRESS CLEANING
+    # -------------------------------
+    raw_address = details.get("Address", "").strip()
+    addr = " ".join(raw_address.split())
+
+    break_keywords = [
+        "DIVISION","CWC","OPP.","NEAR","BEHIND","OFFICE","BUILDING",
+        "FLOOR","ROAD","MARG","AREA","COLONY"
+    ]
+
+    parts = addr.replace(",", ", ").split(",")
+    lines = []
+    temp = ""
+
+    for p in parts:
+        seg = p.strip()
+        if any(seg.upper().startswith(k) for k in break_keywords):
+            lines.append(seg)
+            continue
+        if len(seg) > 30:
+            lines.append(seg)
+            continue
+        if not temp:
+            temp = seg
         else:
-            if not buffer:
-                buffer = seg
-            else:
-                buffer += ", " + seg
-    if buffer:
-        addr_lines.append(buffer)
+            temp += ", " + seg
 
-    # --------------------
-    # Load Template
-    # --------------------
+    if temp:
+        lines.append(temp)
+
+    final_address = "\n".join(lines)
+
+    # -------------------------------
+    # MAPPING FOR NEW TEMPLATE
+    # -------------------------------
+    mapping = {
+        "{Company}": details.get("Company", ""),
+
+        "{Brand}": details.get("Brand", ""),
+        "{Make}": details.get("Brand", ""),
+
+        "{Category}": details.get("Category", ""),
+        "{ProductName}": details.get("Product Name", ""),
+
+        "{Model}": "",    # TEMPLATE HAS FIXED TEXT
+        "{SerialNumber}": "",  # TEMPLATE HAS FIXED TEXT
+
+        "{Quantity}": details.get("Quantity", ""),
+
+        "{Warranty}": details.get("Warranty", ""),
+        "{WarrantyOnCompressor}": details.get("Warranty on Compressor", ""),
+        "{Warranty on Compressor}": details.get("Warranty on Compressor", ""),
+        "{warranty on compressor}": details.get("Warranty on Compressor", ""),
+
+        "{CustomerName}": details.get("Customer Name", ""),
+
+        # CRITICAL FIX → Always add a newline between Org + Address
+        "{Organisation}": details.get("Organisation", "") + "\n",
+        "{Address}": final_address,
+
+        "{GEMContractNo}": details.get("GEM Contract No", ""),
+        "{Date}": today,
+    }
+
+    # -------------------------------
+    # PROCESS DOCUMENT
+    # -------------------------------
     doc = Document(template_file)
 
     # Narrow margins
@@ -98,113 +155,78 @@ if st.button("Generate Certificate"):
         s.left_margin = Inches(0.5)
         s.right_margin = Inches(0.5)
 
-    # Replace simple placeholders that already exist
-    mapping = {
-        "{Company}": data.get("Company", ""),
-        "{CustomerName}": data.get("Customer Name", ""),
-        "{GEMContractNo}": data.get("GEM Contract No", ""),
-        "{Date}": today,
-    }
-
+    # Replace placeholders
     for p in doc.paragraphs:
         text = p.text
         for k, v in mapping.items():
             text = text.replace(k, v)
         p.text = text
 
-    # ============================================================
-    # REMOVE OLD CUSTOMER BLOCK (4 lines)
-    # ============================================================
-    c_index = None
+    # Apply label styling to non-header paragraphs
     for i, p in enumerate(doc.paragraphs):
-        if "Customer" in p.text:
-            c_index = i
-            break
+        if i >= 7:
+            style_label_value(p)
 
-    if c_index is None:
-        c_index = 7  # fallback
-
-    # Delete 4 old paragraphs
-    for _ in range(4):
-        if c_index < len(doc.paragraphs):
-            el = doc.paragraphs[c_index]._p
-            parent = el.getparent()
-            parent.remove(el)
-
-    # ============================================================
-    # CREATE NEW CUSTOMER BLOCK (TABLE-ONLY)
-    # ============================================================
-
-    # Insert table BEFORE c_index
-    table = doc.add_table(rows=1, cols=2)
-    table.style = 'Table Grid'
-    tbl = table._tbl
-    doc.paragraphs[c_index]._p.addprevious(tbl)
-
-    # Row 1: Customer (left) | Date (right)
-    left_cell = table.rows[0].cells[0]
-    right_cell = table.rows[0].cells[1]
-
-    left_cell.text = f"Customer: {data.get('Customer Name', '')}"
-    right_cell.text = f"Date: {today}"
-
-    cell_align(left_cell, "left")
-    cell_align(right_cell, "right")
-    color_blue(left_cell)
-    color_blue(right_cell)
-
-    # --------------------
-    # Row 2: Organisation
-    # --------------------
-    row2 = table.add_row()
-    cell_org = row2.cells[0]
-    cell_org.merge(row2.cells[1])
-    cell_org.text = data.get("Organisation", "")
-    cell_align(cell_org, "left")
-    color_blue(cell_org)
-
-    # --------------------
-    # Row 3+: Address lines
-    # --------------------
-    for line in addr_lines:
-        row = table.add_row()
-        c = row.cells[0]
-        c.merge(row.cells[1])
-        c.text = line
-        cell_align(c, "left")
-        color_blue(c)
-
-    # ============================================================
-    # FIX LETTERHEAD (CENTER TOP 5 PARAGRAPHS)
-    # ============================================================
+    # -------------------------------
+    # MAKE LETTERHEAD CENTERED
+    # -------------------------------
     non_empty = [p for p in doc.paragraphs if p.text.strip()]
     for i in range(min(5, len(non_empty))):
-        p = non_empty[i]
-        align_xml(p, "center")
-        for r in p.runs:
-            r.font.color.rgb = RGBColor(0,112,192)
+        pe = non_empty[i]
+        pe.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for r in pe.runs:
+            r.font.color.rgb = BLUE
             r.font.name = "Calibri"
-            r.font.size = Pt(22 if i==0 else 12)
-            r.font.bold = (i == 0)
+            r.font.size = Pt(22 if i == 0 else 12)
+            r.font.bold = True if i == 0 else False
 
-    # ============================================================
-    # WARRANTY CERTIFICATE TITLE
-    # ============================================================
+    # -------------------------------
+    # CENTER WARRANTY CERTIFICATE
+    # -------------------------------
     for p in doc.paragraphs:
-        if p.text.strip().upper() == "WARRANTY CERTIFICATE":
-            align_xml(p, "center")
+        if "WARRANTY CERTIFICATE" in p.text.upper():
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for r in p.runs:
+                r.font.size = Pt(16)
                 r.font.bold = True
                 r.font.underline = True
-                r.font.size = Pt(16)
-                r.font.color.rgb = RGBColor(0,112,192)
+                r.font.color.rgb = BLUE
 
-    # ============================================================
-    # OUTPUT
-    # ============================================================
-    output = io.BytesIO()
-    doc.save(output)
-    output.seek(0)
+    # -------------------------------
+    # DATE MUST BE RIGHT-ALIGNED
+    # -------------------------------
+    for p in doc.paragraphs:
+        if "Date:" in p.text:
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            break
 
-    st.success("Warranty Certificate Generated Successfully!")
-    st.download_button("⬇ Download DOCX", output, f"Warranty_{today}.docx")
+    # -------------------------------
+    # BLUE LINES
+    # -------------------------------
+    # Line under header
+    for i, p in enumerate(doc.paragraphs):
+        if "Email" in p.text or "@" in p.text:
+            pp = doc.paragraphs[i+1].insert_paragraph_before("")
+            add_line(pp)
+            break
+
+    # Line under GEM Contract
+    for i, p in enumerate(doc.paragraphs):
+        if "GEM Contract No" in p.text:
+            pp = doc.paragraphs[i+1].insert_paragraph_before("")
+            add_line(pp)
+            break
+
+    # -------------------------------
+    # OUTPUT FILE
+    # -------------------------------
+    out = io.BytesIO()
+    doc.save(out)
+    out.seek(0)
+
+    fname = details.get("Customer Name", "Customer").replace(" ", "_")
+    g = details.get("GEM Contract No", "GEM").replace(" ", "_")
+    fn = f"Warranty_{fname}_{g}.docx"
+
+    st.success("✅ Warranty Certificate Generated Successfully!")
+    st.download_button("⬇ Download Certificate", out, fn)
