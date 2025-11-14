@@ -17,9 +17,9 @@ st.caption("Paste extracted details + upload DOCX template → auto-generate for
 # Text Input (Paste the ChatGPT Extracted Block)
 # -------------------------------
 raw_text = st.text_area(
-    "Paste Extracted Details (as provided by ChatGPT, Option A format)",
+    "Paste Extracted Details (Option A format)",
     height=350,
-    placeholder="Paste the block like:\n\nCompany: Shrii Salez Corporation\nBrand: Godrej\nCategory: AC\nProduct Name: ...\n..."
+    placeholder="Paste the block like:\nCompany: Shrii Salez Corporation\nBrand: Godrej\nCategory: AC\nProduct Name: ...\n..."
 )
 
 # -------------------------------
@@ -82,7 +82,7 @@ def merge_and_replace(doc, mapping):
     _process(doc)
 
 # -------------------------------
-# Extract Key-Value Pairs from Pasted Block
+# Extract Key-Value Pairs
 # -------------------------------
 def parse_text_block(text):
     data = {}
@@ -103,7 +103,6 @@ if st.button("Generate Certificate"):
     else:
         details = parse_text_block(raw_text)
 
-        # Mapping placeholders from template → values
         mapping = {
             "{Company}": details.get("Company", ""),
             "{Brand}": details.get("Brand", ""),
@@ -134,7 +133,7 @@ if st.button("Generate Certificate"):
         # Replace placeholders
         merge_and_replace(doc, mapping)
 
-        # Letterhead formatting + title formatting
+        # Letterhead formatting
         if doc.paragraphs:
             header = doc.paragraphs[0]
             for run in header.runs:
@@ -144,7 +143,16 @@ if st.button("Generate Certificate"):
                 run.font.color.rgb = BLUE
             header.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Warranty certificate title formatting
+        # -------- ADD LINES LIKE ORIGINAL VERSION --------
+
+        # Line below letterhead (after email or @)
+        for i, p in enumerate(doc.paragraphs):
+            if "@" in p.text or "Email" in p.text:
+                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
+                add_horizontal_line(new_p)
+                break
+
+        # Warranty Certificate title
         for p in doc.paragraphs:
             if "WARRANTY CERTIFICATE" in p.text.upper():
                 for run in p.runs:
@@ -154,7 +162,23 @@ if st.button("Generate Certificate"):
                     run.font.color.rgb = BLUE
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Output file
+        # Identify GEM block → add line below it
+        for i, p in enumerate(doc.paragraphs):
+            if "GEM Contract No" in p.text:
+                new_p = doc.paragraphs[i+1].insert_paragraph_before("")
+                add_horizontal_line(new_p)
+                break
+
+        # Identify "Supplied Product Details" → add line above
+        for i, p in enumerate(doc.paragraphs):
+            if "Supplied Product Details" in p.text:
+                new_p = doc.paragraphs[i].insert_paragraph_before("")
+                add_horizontal_line(new_p)
+                break
+
+        # --------------------------------------------------
+
+        # Output
         out_buf = io.BytesIO()
         doc.save(out_buf)
         out_buf.seek(0)
