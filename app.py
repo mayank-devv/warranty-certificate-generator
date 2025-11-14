@@ -3,7 +3,6 @@ from datetime import datetime
 import streamlit as st
 from docx import Document
 from docx.shared import RGBColor, Pt, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
@@ -138,13 +137,13 @@ if st.button("Generate Certificate"):
 
     # Replace placeholders
     for p in doc.paragraphs:
-        text = p.text
+        txt = p.text
         for k, v in mapping.items():
-            text = text.replace(k, v)
-        p.text = text
+            txt = txt.replace(k, v)
+        p.text = txt
 
     # ---------------------------------------------------------
-    # REBUILD CUSTOMER BLOCK (NO TAB STOPS)
+    # REBUILD CUSTOMER BLOCK (NO TAB STOPS, NO ALIGN ENUM)
     # ---------------------------------------------------------
     insert_index = None
     for i, p in enumerate(doc.paragraphs):
@@ -152,7 +151,7 @@ if st.button("Generate Certificate"):
             insert_index = i
             break
 
-    # Remove old template block
+    # Delete old block
     for _ in range(5):
         if insert_index < len(doc.paragraphs):
             para = doc.paragraphs[insert_index]
@@ -164,37 +163,34 @@ if st.button("Generate Certificate"):
     cust_name = d.get("Customer Name", "")
     organisation = d.get("Organisation", "")
 
-    # ---------------------------------------------------------
-    # Create Customer + Date using simple padded spaces (stable)
-    # ---------------------------------------------------------
-    long_line = f"Customer: {cust_name}"
-    spaces = " " * 40
-    long_line = f"{long_line}{spaces}Date: {today}"
+    # Construct long single professional line with spaces
+    header_line = f"Customer: {cust_name}"
+    header_line = f"{header_line}{' '*40}Date: {today}"
 
     # Paragraph 1
-    p1 = doc.paragraphs.insert(insert_index, long_line)
-    p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p1 = doc.paragraphs.insert(insert_index, header_line)
+    p1.alignment = 0    # LEFT
     apply_blue(p1)
 
-    # Paragraph 2 (Organisation)
+    # Paragraph 2
     p2 = doc.paragraphs.insert(insert_index + 1, organisation)
-    p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p2.alignment = 0
     apply_blue(p2)
 
     # Address lines
     base = insert_index + 2
     for j, line in enumerate(final_address):
         p = doc.paragraphs.insert(base + j, line)
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.alignment = 0
         apply_blue(p)
 
     # ---------------------------------------------------------
-    # FIX LETTERHEAD
+    # FIX LETTERHEAD (Top 5 non-empty)
     # ---------------------------------------------------------
     non_empty = [p for p in doc.paragraphs if p.text.strip()]
     for i in range(min(5, len(non_empty))):
         p = non_empty[i]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.alignment = 1  # CENTER
         for r in p.runs:
             r.font.color.rgb = BLUE
             r.font.name = "Calibri"
@@ -206,7 +202,7 @@ if st.button("Generate Certificate"):
     # ---------------------------------------------------------
     for p in doc.paragraphs:
         if p.text.strip().upper() == "WARRANTY CERTIFICATE":
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.alignment = 1
             for r in p.runs:
                 r.font.bold = True
                 r.font.underline = True
@@ -218,7 +214,7 @@ if st.button("Generate Certificate"):
     # ---------------------------------------------------------
     for p in doc.paragraphs:
         if warranty_block.split("\n")[0] in p.text:
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.alignment = 0
             p.paragraph_format.left_indent = None
             p.paragraph_format.right_indent = None
             apply_blue(p)
